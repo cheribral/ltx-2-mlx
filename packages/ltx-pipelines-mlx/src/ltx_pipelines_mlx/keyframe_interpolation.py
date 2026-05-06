@@ -222,13 +222,15 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             positions=audio_positions,
         )
 
-        # Apply keyframe conditioning at half resolution (appends tokens)
+        # Apply keyframe conditioning at half resolution (appends tokens).
+        # Each keyframe encodes a single pixel frame.
         for tokens, kf_idx in zip(kf_tokens_half, keyframe_indices):
             kf_condition = VideoConditionByKeyframeIndex(
                 frame_idx=kf_idx,
                 keyframe_latent=tokens,
                 spatial_dims=(F, H_half, W_half),
                 fps=fps,
+                num_pixel_frames=1,
             )
             video_state_1 = kf_condition.apply(video_state_1, (F, H_half, W_half))
 
@@ -337,13 +339,15 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             positions=video_positions_2,
         )
 
-        # Apply keyframe conditioning at full resolution
+        # Apply keyframe conditioning at full resolution.
+        # Each keyframe encodes a single pixel frame.
         for tokens, kf_idx in zip(kf_tokens_full, keyframe_indices):
             kf_condition = VideoConditionByKeyframeIndex(
                 frame_idx=kf_idx,
                 keyframe_latent=tokens,
                 spatial_dims=(F, H_full, W_full),
                 fps=fps,
+                num_pixel_frames=1,
             )
             video_state_2 = kf_condition.apply(video_state_2, (F, H_full, W_full))
 

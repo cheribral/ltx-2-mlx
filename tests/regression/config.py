@@ -26,11 +26,15 @@ FPS = 24
 
 GEN_HEIGHT, GEN_WIDTH, GEN_FRAMES = 480, 704, 33
 
-# G3 (keyframe interpolation) is intentionally absent: the keyframe
-# pipeline currently produces a hold-cut-decay pattern instead of smooth
-# interpolation on hedgehog (validated config), Lisbon (480x480) and
-# 591a3d8 alike. Bug predates the upstream-sync work. Will be revisited
-# alongside Fix 2 (num_pixel_frames) since it touches keyframe positions.
+# Hedgehog keyframe golden — uses the previously-validated config from
+# scripts/keyframe_tests/run_matrix.py (deleted in 71f123a). Restored
+# fixtures live in tests/fixtures/keyframe_pairs/. Used while working on
+# Fix 2 (num_pixel_frames) to evaluate impact on the keyframe regression.
+KF_HEDGEHOG_SEED = 712577398
+KF_HEDGEHOG_PROMPT = "A 3D animated hedgehog character in the rain, smooth camera transition"
+KF_HEDGEHOG_FRAMES = 33
+KF_HEDGEHOG_START = "tests/fixtures/keyframe_pairs/hedgehog_start.png"
+KF_HEDGEHOG_END = "tests/fixtures/keyframe_pairs/hedgehog_end.png"
 
 GOLDENS: dict[str, dict] = {
     "g1_two_stage": {
@@ -63,6 +67,27 @@ GOLDENS: dict[str, dict] = {
             str(GEN_WIDTH),
             "-f",
             str(GEN_FRAMES),
+        ],
+    },
+    "g3b_hedgehog": {
+        "cli_args": [
+            "keyframe",
+            "--prompt",
+            KF_HEDGEHOG_PROMPT,
+            "--start",
+            KF_HEDGEHOG_START,
+            "--end",
+            KF_HEDGEHOG_END,
+            "--seed",
+            str(KF_HEDGEHOG_SEED),
+            "-f",
+            str(KF_HEDGEHOG_FRAMES),
+            "--dev-transformer",
+            "transformer-dev.safetensors",
+            "--distilled-lora",
+            "ltx-2.3-22b-distilled-lora-384.safetensors",
+            "--cfg-scale",
+            "3.0",
         ],
     },
 }

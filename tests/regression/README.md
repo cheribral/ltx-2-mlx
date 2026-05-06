@@ -15,13 +15,16 @@ Two goldens (see `config.py`):
 Heavy artifacts (`.mp4`, `.wav`) are gitignored. Only `manifest.json`
 (stats per tag) is committed.
 
-A `g3_keyframe` golden was deliberately removed: the keyframe pipeline
-currently produces a hold-cut-decay pattern (frames stick on keyframe1
-for ~80% of the timeline, jump, then collapse onto keyframe2 over the
-last few frames) instead of smooth interpolation. The bug reproduces on
-the previously-validated hedgehog config and predates the upstream-sync
-work — it will be revisited when Fix 2 (`num_pixel_frames`) lands, since
-that change touches keyframe RoPE positions.
+A `g3b_hedgehog` golden runs the previously-validated hedgehog
+keyframe config (seed 712577398, default 480x704, dev model + CFG).
+It is **not** a regression check in the strict sense: the keyframe
+pipeline currently produces a hold-cut-decay pattern (frames stick on
+keyframe1 for ~80% of the timeline, jump, then collapse onto keyframe2
+over the last few frames) instead of smooth interpolation. Fix 2
+(`num_pixel_frames`) was applied and the pattern persists with only a
+~5% reduction in cut amplitude — confirming the regression is not
+localised to keyframe RoPE positions. `g3b_hedgehog` is kept so that
+future investigation has a frozen reference of the broken state.
 
 ## Per-fix workflow
 

@@ -21,6 +21,7 @@ def _compute_keyframe_positions(
     height: int,
     width: int,
     fps: float,
+    num_pixel_frames: int = 1,
 ) -> mx.array:
     """Compute positions for a single keyframe, matching the reference.
 
@@ -39,6 +40,13 @@ def _compute_keyframe_positions(
         height: Latent height H.
         width: Latent width W.
         fps: Frame rate.
+        num_pixel_frames: Number of pixel frames the keyframe latent encodes.
+            For single-frame keyframes (default), the temporal range is
+            narrowed to [start, start+1) instead of the VAE-scaled width.
+            Matches Lightricks/LTX-2 PR #192 (commit a2c3f24): without this,
+            non-zero keyframes occupy a temporal range 8x wider than they
+            represent, which leaves a gap between the last generated latent
+            frame and the end keyframe.
 
     Returns:
         Positions (1, H*W, 3) float32.
@@ -46,13 +54,17 @@ def _compute_keyframe_positions(
     # Temporal: compute pixel coords for a single frame, then offset by frame_idx.
     # Reference: get_pixel_coords on single-frame shape, then += frame_idx, then /= fps.
     if frame_idx == 0:
-        # With causal fix: pixel range [max(0, 0*8+1-8), 0*8+1] = [0, 1), midpoint = 0.5
+        # With causal fix: pixel range [max(0, 0*8+1-8), 0*8+1] = [0, 1)
         t_start = 0.0
         t_end = 1.0
     else:
-        # Without causal fix: pixel range [0*8, 1*8) = [0, 8), midpoint = 4.0
+        # Without causal fix: pixel range [0*8, 1*8) = [0, 8)
         t_start = 0.0
         t_end = float(VIDEO_TEMPORAL_SCALE)
+
+    # Single-frame keyframes occupy exactly 1 pixel-frame of temporal width.
+    if num_pixel_frames == 1:
+        t_end = t_start + 1.0
 
     t_mid = (t_start + t_end) / 2.0
     # Add pixel frame_idx offset then divide by fps
@@ -85,6 +97,8 @@ class VideoConditionByKeyframeIndex:
         spatial_dims: (F, H, W) latent spatial dimensions.
         fps: Frame rate for position computation.
         strength: Conditioning strength. 1.0 = fully preserved.
+        num_pixel_frames: Number of pixel frames the keyframe latent encodes.
+            Defaults to 1 (the typical case). See ``_compute_keyframe_positions``.
     """
 
     def __init__(
@@ -94,6 +108,7 @@ class VideoConditionByKeyframeIndex:
         spatial_dims: tuple[int, int, int],
         fps: float = 24.0,
         strength: float = 1.0,
+        num_pixel_frames: int = 1,
     ):
         self.frame_idx = frame_idx
         self.keyframe_latent = keyframe_latent
@@ -102,7 +117,7 @@ class VideoConditionByKeyframeIndex:
         # Compute positions matching reference: single-frame positions with
         # frame_idx offset, NOT extracted from the full video grid.
         _, H, W = spatial_dims
-        self.keyframe_positions = _compute_keyframe_positions(frame_idx, H, W, fps)
+        self.keyframe_positions = _compute_keyframe_positions(frame_idx, H, W, fps, num_pixel_frames=num_pixel_frames)
 
     def apply(self, state: LatentState, spatial_dims: tuple[int, int, int]) -> LatentState:
         """Apply keyframe conditioning by appending tokens.
