@@ -89,6 +89,7 @@ def create_noised_state(
     sigma: float = 1.0,
     initial_latent: mx.array | None = None,
     dtype: mx.Dtype = mx.bfloat16,
+    legacy_scalar_blend: bool = False,
 ) -> LatentState:
     """Build a noised latent state from conditionings + optional initial latent.
 
@@ -118,6 +119,20 @@ def create_noised_state(
             region. ``None`` means start from zeros (typical stage 1).
             Provided as the upscaled stage-1 latent for stage 2.
         dtype: dtype of the resulting state arrays.
+        legacy_scalar_blend: When True, apply scalar-sigma noise blend
+            BEFORE conditionings (matches the legacy
+            ``noise * sigma + clean * (1 - sigma)`` inline arithmetic
+            with Python literals — bf16 cannot represent 0.05 exactly,
+            so going through ``noise_latent_state``'s ``mask * sigma``
+            blend introduces a ~3e-3 error per element that compounds
+            across denoise steps and breaks bit-equivalence with
+            pre-Phase-3 baselines). Set True at video Stage 1 + Stage 2
+            callsites in ti2vid_two_stages / ti2vid_two_stages_hq /
+            a2vid_two_stage / ic_lora. Default False matches the
+            standard helper-style flow (init → cond → mask-aware
+            noise) and preserves bit-equivalence for callsites whose
+            legacy code went through ``noise_latent_state`` (audio
+            Stage 2, keyframe and reference-append conditionings).
 
     Returns:
         Noised LatentState ready to feed into the denoising loop.
@@ -125,7 +140,11 @@ def create_noised_state(
     if initial_latent is None:
         latent = mx.zeros(base_shape, dtype=dtype)
     else:
-        latent = initial_latent.astype(dtype)
+        # Preserve initial_latent dtype. Stage-2 upsampler output is
+        # fp32 (normalize_latent uses fp32 per-channel stats); casting
+        # to bf16 here would silently lose ~16 bits of mantissa and
+        # drift across denoise steps.
+        latent = initial_latent
 
     state = LatentState(
         latent=latent,
@@ -133,6 +152,25 @@ def create_noised_state(
         denoise_mask=mx.ones((base_shape[0], base_shape[1], 1), dtype=dtype),
         positions=positions,
     )
+
+    if legacy_scalar_blend:
+        # Apply scalar noise blend BEFORE conditionings, with Python
+        # scalar sigma (no bf16 mask quantization). Then conditionings
+        # may overwrite individual tokens (LatentIndex replace) or
+        # append new ones (Keyframe / Reference) — they set their own
+        # mask=0 at the affected tokens, exactly as the legacy
+        # ``inline noise+blend`` → ``apply_conditioning`` flow did.
+        mx.random.seed(seed)
+        noise = mx.random.normal(state.clean_latent.shape).astype(mx.bfloat16)
+        blended = noise * sigma + state.clean_latent * (1.0 - sigma)
+        state = LatentState(
+            latent=blended,
+            clean_latent=state.clean_latent,
+            denoise_mask=state.denoise_mask,
+            positions=state.positions,
+            attention_mask=state.attention_mask,
+        )
+        return state_with_conditionings(state, conditionings, spatial_dims)
+
     state = state_with_conditionings(state, conditionings, spatial_dims)
-    state = noise_latent_state(state, sigma=sigma, seed=seed)
-    return state
+    return noise_latent_state(state, sigma=sigma, seed=seed)

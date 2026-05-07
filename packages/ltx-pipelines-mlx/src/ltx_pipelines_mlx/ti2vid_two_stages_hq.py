@@ -18,11 +18,7 @@ from ltx_core_mlx.components.guiders import (
 )
 from ltx_core_mlx.components.patchifiers import compute_video_latent_shape
 from ltx_core_mlx.conditioning.types.latent_cond import (
-    LatentState,
     VideoConditionByLatentIndex,
-    apply_conditioning,
-    create_initial_state,
-    noise_latent_state,
 )
 from ltx_core_mlx.model.transformer.model import X0Model
 from ltx_core_mlx.utils.image import prepare_image_for_encoding
@@ -30,6 +26,7 @@ from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
 from ltx_pipelines_mlx.scheduler import STAGE_2_SIGMAS, ltx2_schedule
 from ltx_pipelines_mlx.ti2vid_two_stages import DEFAULT_CFG_SCALE, TwoStagePipeline
+from ltx_pipelines_mlx.utils.helpers import create_noised_state
 from ltx_pipelines_mlx.utils.samplers import denoise_loop, res2s_denoise_loop
 
 # TeaCache calibration constants for the HQ res_2s path (LTX-2 stage 1, 30
@@ -138,9 +135,6 @@ class TwoStageHQPipeline(TwoStagePipeline):
         video_positions_1 = compute_video_positions(F, H_half, W_half)
         audio_positions = compute_audio_positions(audio_T)
 
-        video_state = create_initial_state(video_shape, seed, positions=video_positions_1)
-        audio_state = create_initial_state(audio_shape, seed + 1, positions=audio_positions)
-
         # I2V conditioning at half resolution
         enc_h_half = H_half * 32
         enc_w_half = W_half * 32
@@ -158,10 +152,28 @@ class TwoStageHQPipeline(TwoStagePipeline):
                 )
             )
 
-        if conditionings_1:
-            video_state = apply_conditioning(video_state, conditionings_1, (F, H_half, W_half))
-            video_state = noise_latent_state(video_state, sigma=1.0, seed=seed)
-            audio_state = noise_latent_state(audio_state, sigma=1.0, seed=seed + 1)
+        # Stage 1 video/audio: legacy_scalar_blend=True for bit-exact match
+        # (see ti2vid_two_stages.py for rationale).
+        video_state = create_noised_state(
+            base_shape=video_shape,
+            conditionings=conditionings_1,
+            spatial_dims=(F, H_half, W_half),
+            positions=video_positions_1,
+            seed=seed,
+            sigma=1.0,
+            initial_latent=None,
+            legacy_scalar_blend=True,
+        )
+        audio_state = create_noised_state(
+            base_shape=audio_shape,
+            conditionings=[],
+            spatial_dims=(F, H_half, W_half),  # unused
+            positions=audio_positions,
+            seed=seed + 1,
+            sigma=1.0,
+            initial_latent=None,
+            legacy_scalar_blend=True,
+        )
 
         # Stage 1 sigma schedule (dynamic for dev model)
         num_tokens = F * H_half * W_half
@@ -256,30 +268,32 @@ class TwoStageHQPipeline(TwoStagePipeline):
         sigmas_2 = STAGE_2_SIGMAS[: stage2_steps + 1] if stage2_steps else STAGE_2_SIGMAS
         start_sigma = sigmas_2[0]
 
-        mx.random.seed(seed + 2)
-        noise = mx.random.normal(video_tokens.shape).astype(mx.bfloat16)
-        noisy_tokens = noise * start_sigma + video_tokens * (1.0 - start_sigma)
-
         video_positions_2 = compute_video_positions(F, H_full, W_full)
 
-        video_state_2 = LatentState(
-            latent=noisy_tokens,
-            clean_latent=video_tokens,
-            denoise_mask=mx.ones((1, video_tokens.shape[1], 1), dtype=mx.bfloat16),
+        # Stage 2 video: legacy_scalar_blend=True bit-matches the legacy inline
+        # ``noise * sigma + video_tokens * (1 - sigma)`` arithmetic.
+        video_state_2 = create_noised_state(
+            base_shape=video_tokens.shape,
+            conditionings=conditionings_2,
+            spatial_dims=(F, H_full, W_full),
             positions=video_positions_2,
+            seed=seed + 2,
+            sigma=start_sigma,
+            initial_latent=video_tokens,
+            legacy_scalar_blend=True,
         )
 
-        if conditionings_2:
-            video_state_2 = apply_conditioning(video_state_2, conditionings_2, (F, H_full, W_full))
-
+        # Stage 2 audio: default (mask path) matches legacy noise_latent_state.
         audio_tokens_1 = output_1.audio_latent
-        audio_state_2 = LatentState(
-            latent=audio_tokens_1,
-            clean_latent=audio_tokens_1,
-            denoise_mask=mx.ones((1, audio_tokens_1.shape[1], 1), dtype=audio_tokens_1.dtype),
+        audio_state_2 = create_noised_state(
+            base_shape=audio_tokens_1.shape,
+            conditionings=[],
+            spatial_dims=(F, H_full, W_full),  # unused
             positions=audio_positions,
+            seed=seed + 2,
+            sigma=start_sigma,
+            initial_latent=audio_tokens_1,
         )
-        audio_state_2 = noise_latent_state(audio_state_2, sigma=start_sigma, seed=seed + 2)
 
         # Stage 2: simple denoising (no CFG)
         output_2 = denoise_loop(

@@ -25,11 +25,7 @@ from ltx_core_mlx.conditioning.types.attention_strength_wrapper import (
     ConditioningItemAttentionStrengthWrapper,
 )
 from ltx_core_mlx.conditioning.types.latent_cond import (
-    LatentState,
     VideoConditionByLatentIndex,
-    apply_conditioning,
-    create_initial_state,
-    noise_latent_state,
 )
 from ltx_core_mlx.conditioning.types.reference_video_cond import VideoConditionByReferenceLatent
 from ltx_core_mlx.loader import (
@@ -49,6 +45,7 @@ from ltx_core_mlx.utils.video import load_video_frames_normalized
 from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors
 from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS, STAGE_2_SIGMAS
 from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
+from ltx_pipelines_mlx.utils.helpers import create_noised_state
 from ltx_pipelines_mlx.utils.samplers import denoise_loop
 
 logger = logging.getLogger(__name__)
@@ -377,9 +374,6 @@ class ICLoraPipeline(TextToVideoPipeline):
         video_positions_1 = compute_video_positions(F, H_half, W_half)
         audio_positions = compute_audio_positions(audio_T)
 
-        video_state = create_initial_state(video_shape, seed, positions=video_positions_1)
-        audio_state = create_initial_state(audio_shape, seed + 1, positions=audio_positions)
-
         # Encode conditionings before denoising (reduce peak memory)
         stage_1_conditionings = self._create_conditionings(
             images=images,
@@ -391,15 +385,31 @@ class ICLoraPipeline(TextToVideoPipeline):
             conditioning_attention_mask=conditioning_attention_mask,
         )
 
-        # Apply image conditionings (replace tokens at frame index)
-        image_conds = [c for c in stage_1_conditionings if isinstance(c, VideoConditionByLatentIndex)]
-        if image_conds:
-            video_state = apply_conditioning(video_state, image_conds, (F, H_half, W_half))
-
-        # Apply IC-LoRA reference conditionings (append tokens)
-        for cond in stage_1_conditionings:
-            if isinstance(cond, VideoConditionByReferenceLatent | ConditioningItemAttentionStrengthWrapper):
-                video_state = cond.apply(video_state, (F, H_half, W_half))
+        # Build noised state via canonical upstream order:
+        #     init (zeros) -> apply conditionings (image replace + ref append) -> noise.
+        # For pipelines without reference conditionings (image-only), this is
+        # bit-equivalent to the previous code path. With reference appends,
+        # the noise is generated for the FULL post-condition shape (including
+        # appended ref tokens, masked out), shifting the gen-token noise
+        # pattern slightly.
+        video_state = create_noised_state(
+            base_shape=video_shape,
+            conditionings=stage_1_conditionings,
+            spatial_dims=(F, H_half, W_half),
+            positions=video_positions_1,
+            seed=seed,
+            sigma=1.0,
+            initial_latent=None,
+        )
+        audio_state = create_noised_state(
+            base_shape=audio_shape,
+            conditionings=[],
+            spatial_dims=(F, H_half, W_half),  # unused
+            positions=audio_positions,
+            seed=seed + 1,
+            sigma=1.0,
+            initial_latent=None,
+        )
 
         # Denoise stage 1
         sigmas_1 = DISTILLED_SIGMAS[: stage1_steps + 1] if stage1_steps else DISTILLED_SIGMAS
@@ -475,32 +485,34 @@ class ICLoraPipeline(TextToVideoPipeline):
         sigmas_2 = STAGE_2_SIGMAS[: stage2_steps + 1] if stage2_steps else STAGE_2_SIGMAS
         start_sigma = sigmas_2[0]
 
-        mx.random.seed(seed + 2)
-        noise = mx.random.normal(video_tokens_up.shape).astype(mx.bfloat16)
-        noisy_tokens = noise * start_sigma + video_tokens_up * (1.0 - start_sigma)
-
         video_positions_2 = compute_video_positions(F, H_full, W_full)
 
-        video_state_2 = LatentState(
-            latent=noisy_tokens,
-            clean_latent=video_tokens_up,
-            denoise_mask=mx.ones((1, video_tokens_up.shape[1], 1), dtype=mx.bfloat16),
+        # Stage 2 video: scalar-blend bit-matches legacy inline arithmetic.
+        # IC-LoRA Stage 1 already accepts a small RNG-shift drift due to the
+        # reference-token shape change; Stage 2 stays bit-exact since cond_2
+        # is at most a LatentIndex replace (no shape change).
+        video_state_2 = create_noised_state(
+            base_shape=video_tokens_up.shape,
+            conditionings=conditionings_2,
+            spatial_dims=(F, H_full, W_full),
             positions=video_positions_2,
+            seed=seed + 2,
+            sigma=start_sigma,
+            initial_latent=video_tokens_up,
+            legacy_scalar_blend=True,
         )
-
-        # Apply I2V conditioning at full resolution for stage 2
-        if conditionings_2:
-            video_state_2 = apply_conditioning(video_state_2, conditionings_2, (F, H_full, W_full))
 
         # Audio refined in stage 2
         audio_tokens_1 = output_1.audio_latent
-        audio_state_2 = LatentState(
-            latent=audio_tokens_1,
-            clean_latent=audio_tokens_1,
-            denoise_mask=mx.ones((1, audio_tokens_1.shape[1], 1), dtype=audio_tokens_1.dtype),
+        audio_state_2 = create_noised_state(
+            base_shape=audio_tokens_1.shape,
+            conditionings=[],
+            spatial_dims=(F, H_full, W_full),  # unused
             positions=audio_positions,
+            seed=seed + 2,
+            sigma=start_sigma,
+            initial_latent=audio_tokens_1,
         )
-        audio_state_2 = noise_latent_state(audio_state_2, sigma=start_sigma, seed=seed + 2)
 
         output_2 = denoise_loop(
             model=x0_model,
