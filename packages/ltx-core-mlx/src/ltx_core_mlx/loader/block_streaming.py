@@ -39,7 +39,7 @@ from pathlib import Path
 import mlx.core as mx
 import mlx.nn as nn
 
-__all__ = ["BlockStreamer"]
+__all__ = ["BlockStreamer", "StreamingLTXModel"]
 
 
 class BlockStreamer:
@@ -156,3 +156,68 @@ class BlockStreamer:
         """Release the mmap'd dict. After this the streamer is unusable."""
         self._weights = {}
         self._block_key_map = {}
+
+
+class StreamingLTXModel(nn.Module):
+    """Drop-in LTXModel replacement that streams transformer blocks.
+
+    Wraps an ``LTXModel`` whose ``transformer_blocks`` list has been
+    truncated to a single block, and a :class:`BlockStreamer` over the
+    full transformer safetensors. On ``__call__`` it builds a
+    block_provider that binds each requested block index into the
+    single shared block before the model runs forward.
+
+    Constraints:
+        - The wrapped ``LTXModel`` must have exactly one entry in
+          ``transformer_blocks``. The pipeline is responsible for
+          dropping the other ``num_layers - 1`` blocks before
+          constructing this wrapper (otherwise quantization +
+          materialization at load time defeats the streaming goal).
+        - The wrapped model's ``config.num_layers`` is the iteration
+          count seen by the block_provider; the streamer must contain
+          that many block indices.
+
+    Args:
+        model: Underlying ``LTXModel`` with one block + non-block
+            weights already loaded.
+        streamer: ``BlockStreamer`` over the transformer safetensors.
+
+    Attribute proxying:
+        Unknown attribute reads are forwarded to the wrapped model so
+        callers (e.g. ``X0Model``) can read ``self.config`` etc.
+    """
+
+    def __init__(self, model: nn.Module, streamer: BlockStreamer) -> None:
+        super().__init__()
+        # Register the inner model as a child so its parameters are
+        # visible to nn.Module machinery (load_weights, parameters()).
+        # Use the alias ``inner`` instead of ``_model`` to avoid the
+        # leading-underscore-name shadowing nn.Module would attempt
+        # via __getattr__.
+        self.inner = model
+        # Store the streamer + shared block in the instance __dict__
+        # directly so they don't show up in parameters().
+        object.__setattr__(self, "_streamer", streamer)
+        object.__setattr__(self, "_shared_block", model.transformer_blocks[0])
+
+    def __call__(self, *args, **kwargs):
+        # Inject block_provider unless caller already passed one.
+        if kwargs.get("block_provider") is None:
+            streamer = object.__getattribute__(self, "_streamer")
+            shared = object.__getattribute__(self, "_shared_block")
+            prev_idx: list[int | None] = [None]
+
+            def provider(idx: int) -> nn.Module:
+                streamer.bind(shared, idx, evict_previous=prev_idx[0])
+                prev_idx[0] = idx
+                return shared
+
+            kwargs["block_provider"] = provider
+        return self.inner(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            inner = super().__getattr__("inner")
+            return getattr(inner, name)

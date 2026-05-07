@@ -39,6 +39,13 @@ class TextToVideoPipeline:
     Args:
         model_dir: Path to model weights or HuggingFace repo ID.
         low_memory: If True, aggressively free memory between stages.
+        low_ram_streaming: If True, stream transformer blocks from
+            mmap'd safetensors instead of materializing all 48 blocks.
+            Cuts transformer peak RSS from ~10-12 GB (q8) or ~22 GB
+            (bf16) to ~0.6 GB. Adds ~48 sync points per forward, so
+            slightly slower per step. Currently incompatible with LoRA
+            fusion (use the pre-fused ``transformer-distilled.safetensors``
+            for distilled-only inference).
     """
 
     def __init__(
@@ -46,10 +53,12 @@ class TextToVideoPipeline:
         model_dir: str,
         gemma_model_id: str = "mlx-community/gemma-3-12b-it-4bit",
         low_memory: bool = True,
+        low_ram_streaming: bool = False,
     ):
         self.model_dir = self._resolve_model_dir(model_dir)
         self._gemma_model_id = gemma_model_id
         self.low_memory = low_memory
+        self.low_ram_streaming = low_ram_streaming
         self._loaded = False
 
         self._dev_transformer: str | None = None
@@ -304,10 +313,34 @@ class TextToVideoPipeline:
             # Fuse pending LoRA weights before loading into model
             pending_loras = getattr(self, "_pending_loras", None)
             if pending_loras:
+                if self.low_ram_streaming:
+                    raise NotImplementedError(
+                        "low_ram_streaming is incompatible with on-the-fly LoRA fusion. "
+                        "Either disable streaming or pre-fuse LoRAs into the safetensors file."
+                    )
                 transformer_weights = self._fuse_pending_loras(transformer_weights, pending_loras)
 
-            apply_quantization(self.dit, transformer_weights)
-            self.dit.load_weights(list(transformer_weights.items()))
+            if self.low_ram_streaming:
+                # Streaming path: drop blocks 1..47 BEFORE quantization so
+                # apply_quantization only materializes block 0's weights
+                # (instead of 48 blocks of random init that immediately get
+                # forced into Metal-resident memory). Then load only the
+                # non-block weights via load_weights, and wrap the model
+                # so each forward streams one block at a time from mmap.
+                from ltx_core_mlx.loader.block_streaming import BlockStreamer, StreamingLTXModel
+
+                self.dit.transformer_blocks = [self.dit.transformer_blocks[0]]
+                apply_quantization(self.dit, transformer_weights)
+                non_block_weights = [
+                    (k, v) for k, v in transformer_weights.items() if not k.startswith("transformer_blocks.")
+                ]
+                self.dit.load_weights(non_block_weights, strict=False)
+
+                streamer = BlockStreamer(transformer_path, block_prefix="transformer.transformer_blocks.")
+                self.dit = StreamingLTXModel(self.dit, streamer)
+            else:
+                apply_quantization(self.dit, transformer_weights)
+                self.dit.load_weights(list(transformer_weights.items()))
             aggressive_cleanup()
 
         # Stage 3: VAE + audio (smaller components)

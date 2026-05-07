@@ -186,3 +186,66 @@ class TestBlockProvider:
             assert mx.array_equal(run1_v, run2_v).item()
             assert mx.array_equal(run1_a, run2_a).item()
             streamer.close()
+
+
+class TestStreamingLTXModel:
+    def test_wrapper_matches_baseline(self):
+        """StreamingLTXModel(model, streamer) produces same output as model(...)."""
+        from ltx_core_mlx.loader.block_streaming import StreamingLTXModel
+
+        cfg = _tiny_config(num_layers=3)
+        mx.random.seed(42)
+        model = LTXModel(cfg)
+        mx.eval(model.parameters())
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "blocks.safetensors"
+            _save_block_weights_to_safetensors(model, path, prefix="transformer_blocks.")
+            streamer = BlockStreamer(path, block_prefix="transformer_blocks.")
+
+            # Build the streaming model:
+            # truncate transformer_blocks to only the first one,
+            # then wrap. The wrapper's __call__ feeds the block_provider.
+            stream_model = LTXModel(cfg)
+            mx.eval(stream_model.parameters())  # init weights
+            # Drop blocks 1+ from the streaming model, then bind block 0 from disk.
+            stream_model.transformer_blocks = [stream_model.transformer_blocks[0]]
+            streamer.bind(stream_model.transformer_blocks[0], idx=0)
+            wrapped = StreamingLTXModel(stream_model, streamer)
+
+            # Copy non-block weights (input proj, AdaLN, output, etc.) from the
+            # reference model into the streaming model so non-block forward
+            # paths match. We use load_weights with strict=False on the
+            # whole reference parameter tree minus block keys.
+            non_block_params = []
+
+            def _walk(node, path: str):
+                if isinstance(node, mx.array):
+                    if not path.startswith("transformer_blocks."):
+                        non_block_params.append((path, node))
+                elif isinstance(node, dict):
+                    for k, v in node.items():
+                        _walk(v, f"{path}.{k}" if path else k)
+                elif isinstance(node, list):
+                    for i, v in enumerate(node):
+                        _walk(v, f"{path}.{i}" if path else str(i))
+
+            _walk(model.parameters(), "")
+            stream_model.load_weights(non_block_params, strict=False)
+
+            # Inputs
+            B, Nv, Na, Nt = 1, 16, 8, 4
+            common = dict(
+                video_latent=mx.random.normal((B, Nv, cfg.video_patch_channels)).astype(mx.bfloat16),
+                audio_latent=mx.random.normal((B, Na, cfg.audio_patch_channels)).astype(mx.bfloat16),
+                timestep=mx.array([0.5]),
+                video_text_embeds=mx.random.normal((B, Nt, cfg.video_dim)).astype(mx.bfloat16),
+                audio_text_embeds=mx.random.normal((B, Nt, cfg.audio_dim)).astype(mx.bfloat16),
+            )
+
+            baseline_v, baseline_a = model(**common)
+            streamed_v, streamed_a = wrapped(**common)
+            mx.eval(baseline_v, baseline_a, streamed_v, streamed_a)
+            assert mx.array_equal(baseline_v, streamed_v).item()
+            assert mx.array_equal(baseline_a, streamed_a).item()
+            streamer.close()

@@ -108,6 +108,17 @@ examples:
         ),
     )
     gen.add_argument(
+        "--low-ram",
+        action="store_true",
+        help=(
+            "One-stage T2V/I2V only: stream transformer blocks from mmap'd "
+            "safetensors instead of materializing all 48 blocks. Cuts "
+            "transformer peak RSS from ~10-12 GB (q8) to ~0.6 GB. Slightly "
+            "slower per step due to ~48 sync points. Incompatible with "
+            "--lora (use a pre-fused safetensors)."
+        ),
+    )
+    gen.add_argument(
         "--teacache-thresh",
         type=float,
         default=None,
@@ -371,7 +382,11 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         if not args.quiet:
             print("Mode: Text-to-Video")
 
-        pipe = TextToVideoPipeline(model_dir=args.model, gemma_model_id=args.gemma)
+        pipe = TextToVideoPipeline(
+            model_dir=args.model,
+            gemma_model_id=args.gemma,
+            low_ram_streaming=getattr(args, "low_ram", False),
+        )
         if lora_paths:
             pipe._pending_loras = lora_paths
         pipe.generate_and_save(
