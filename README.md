@@ -148,13 +148,14 @@ pipe.generate_and_save(
 )
 ```
 
-Retake / Extend:
+Retake / Extend (single class — extend is folded into `RetakePipeline`):
 
 ```python
-from ltx_pipelines_mlx import RetakePipeline, ExtendPipeline
+from ltx_pipelines_mlx import RetakePipeline
+
+pipe = RetakePipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 
 # Retake: regenerate latent frames 1-3
-pipe = RetakePipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 video_lat, audio_lat = pipe.retake_from_video(
     prompt="A different scene",
     video_path="source.mp4",
@@ -163,7 +164,6 @@ video_lat, audio_lat = pipe.retake_from_video(
 )
 
 # Extend: add 2 latent frames after
-pipe = ExtendPipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 video_lat, audio_lat = pipe.extend_from_video(
     prompt="Continue the motion",
     video_path="source.mp4",

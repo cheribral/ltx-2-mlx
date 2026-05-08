@@ -639,13 +639,13 @@ def _cmd_extend(args: argparse.Namespace) -> None:
     """Add frames before or after an existing video."""
     t0 = time.time()
 
-    from ltx_pipelines_mlx.extend import ExtendPipeline
+    from ltx_pipelines_mlx.retake import RetakePipeline
 
     if not args.quiet:
         print(f"Mode: Extend ({args.direction})")
         print(f"Video: {args.video}, +{args.extend_frames} latent frames")
 
-    pipe = ExtendPipeline(model_dir=args.model, gemma_model_id=args.gemma)
+    pipe = RetakePipeline(model_dir=args.model, gemma_model_id=args.gemma)
     kwargs: dict = dict(
         prompt=args.prompt,
         video_path=args.video,

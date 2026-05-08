@@ -103,8 +103,7 @@ packages/
 │       ├── ti2vid_two_stages.py           # Two-stage: half res → upscale → refine
 │       ├── ti2vid_two_stages_hq.py        # Two-stage HQ variant
 │       ├── a2vid_two_stage.py             # Audio-to-video two-stage pipeline
-│       ├── retake.py                      # Retake: regenerate a time segment
-│       ├── extend.py                      # Extend: add frames before/after
+│       ├── retake.py                      # RetakePipeline: regenerate a time segment + extend (append/prepend)
 │       ├── keyframe_interpolation.py      # Keyframe interpolation
 │       ├── ic_lora.py                     # IC-LoRA reference-based generation
 │       ├── scheduler.py                   # DISTILLED_SIGMAS, STAGE_2_SIGMAS

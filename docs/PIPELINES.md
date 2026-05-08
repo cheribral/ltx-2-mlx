@@ -2,7 +2,7 @@
 
 Reference for all CLI subcommands of `ltx-2-mlx`, the pipeline class
 backing each, and which memory / performance flags apply where.
-Current as of **v0.8.2**.
+Current as of **v0.8.3**.
 
 For the underlying architecture and conventions, see
 [CLAUDE.md](../CLAUDE.md). For the high-level user-facing overview,
@@ -20,8 +20,8 @@ see [README.md](../README.md).
 | `keyframe` | `KeyframeInterpolationPipeline` | start frame ↔ end frame | Euler + CFG (30) | Euler distilled (3) | q8 + dev LoRA | ✅ | 0.0 |
 | `ic-lora` | `ICLoraPipeline` | V2V (control video) + optional I2V | Euler distilled (8) | Euler distilled (3) | q8 + control LoRA | ❌ | — |
 | `hdr-ic-lora` | `HDRICLoraPipeline(ICLoraPipeline)` | V2V / pure T2V / +I2V → linear HDR | Euler distilled (8) | Euler distilled (3) | q8 + HDR LoRA | ❌ | — |
-| `retake` | retake | regenerate latent frame range | Euler dev + CFG (30) | — | dev | ✅ | 0.0 |
-| `extend` | extend | append frames before/after | Euler dev + CFG (30) | — | dev | ✅ | 0.0 |
+| `retake` | `RetakePipeline.retake_from_video` | regenerate latent frame range | Euler dev + CFG (30) | — | dev | ✅ | 0.0 |
+| `extend` | `RetakePipeline.extend_from_video` (same class) | append frames before/after | Euler dev + CFG (30) | — | dev | ✅ | 0.0 |
 | `enhance` | Gemma rewrite | prompt → enriched prompt | — | — | Gemma 3 12B | — | — |
 | `info` / `train` / `preprocess` | — | utilities | — | — | — | — | — |
 
