@@ -30,6 +30,7 @@ from ltx_pipelines_mlx.ti2vid_one_stage import TI2VidOneStagePipeline
 from ltx_pipelines_mlx.ti2vid_two_stages import TwoStagePipeline
 from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline
 from ltx_pipelines_mlx.utils.blocks import (
+    AudioConditioner,
     AudioDecoder,
     ImageConditioner,
     PromptEncoder,
@@ -39,6 +40,7 @@ from ltx_pipelines_mlx.utils.blocks import (
 
 __all__ = [
     # Composition blocks (mirror upstream utils/blocks.py)
+    "AudioConditioner",
     "AudioDecoder",
     "AudioToVideoPipeline",
     "BasePipeline",

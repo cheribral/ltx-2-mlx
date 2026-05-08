@@ -281,6 +281,51 @@ class AudioDecoder:
         return vocoder(mel)
 
 
+class AudioConditioner:
+    """Owns the audio VAE encoder + processor lifecycle.
+
+    Mirrors upstream ``utils.blocks.AudioConditioner``. Used by
+    :class:`RetakePipeline` to encode the source audio of an existing
+    video before regenerating a time region. Wraps a callable so the
+    encoder + processor are built, passed to user code, then freed.
+    """
+
+    def __init__(self, model_dir: str | Path) -> None:
+        self.model_dir = _resolve_model_dir(model_dir)
+        self._encoder: object | None = None
+        self._processor: object | None = None
+
+    def load(self) -> tuple[object, object]:
+        if self._encoder is not None and self._processor is not None:
+            return self._encoder, self._processor
+        from ltx_core_mlx.model.audio_vae import AudioProcessor, AudioVAEEncoder
+
+        self._encoder = AudioVAEEncoder()
+        encoder_weights = load_split_safetensors(self.model_dir / "audio_vae.safetensors", prefix="audio_vae.encoder.")
+        all_audio = load_split_safetensors(self.model_dir / "audio_vae.safetensors", prefix="audio_vae.")
+        for k, v in all_audio.items():
+            if k.startswith("per_channel_statistics."):
+                encoder_weights[k] = v
+        encoder_weights = remap_audio_vae_keys(encoder_weights)
+        self._encoder.load_weights(list(encoder_weights.items()))
+        self._processor = AudioProcessor()
+        aggressive_cleanup()
+        return self._encoder, self._processor
+
+    def free(self) -> None:
+        self._encoder = None
+        self._processor = None
+        aggressive_cleanup()
+
+    def __call__(self, fn: Callable[[object, object], object], *, free_after: bool = True) -> object:
+        """Build encoder+processor, call ``fn(encoder, processor)``, free."""
+        encoder, processor = self.load()
+        result = fn(encoder, processor)
+        if free_after:
+            self.free()
+        return result
+
+
 class VideoUpsampler:
     """Owns the spatial upsampler lifecycle.
 
@@ -329,6 +374,7 @@ class VideoUpsampler:
 
 
 __all__ = [
+    "AudioConditioner",
     "AudioDecoder",
     "ImageConditioner",
     "PromptEncoder",

@@ -24,7 +24,7 @@ from ltx_core_mlx.text_encoders.gemma.feature_extractor import GemmaFeaturesExtr
 from ltx_core_mlx.utils.image import prepare_image_for_encoding
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
-from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors, remap_audio_vae_keys
+from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors
 from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS
 from ltx_pipelines_mlx.utils.constants import DEFAULT_NEGATIVE_PROMPT
 from ltx_pipelines_mlx.utils.helpers import create_noised_state
@@ -75,6 +75,9 @@ class BasePipeline:
         # below are properties that proxy these blocks for backward compat
         # with subclasses that read/write them directly.
         from ltx_pipelines_mlx.utils.blocks import (
+            AudioConditioner as _AudioConditionerBlock,
+        )
+        from ltx_pipelines_mlx.utils.blocks import (
             AudioDecoder as _AudioDecoderBlock,
         )
         from ltx_pipelines_mlx.utils.blocks import (
@@ -89,12 +92,9 @@ class BasePipeline:
 
         self.prompt_encoder = _PromptEncoderBlock(self.model_dir, gemma_model_id)
         self.image_conditioner = _ImageConditionerBlock(self.model_dir)
+        self.audio_conditioner = _AudioConditionerBlock(self.model_dir)
         self.video_decoder_block = _VideoDecoderBlock(self.model_dir)
         self.audio_decoder_block = _AudioDecoderBlock(self.model_dir)
-
-        # Audio encoder block is loaded lazily by retake/extend only.
-        self._audio_encoder: object | None = None
-        self._audio_processor: object | None = None
 
         self.dit: LTXModel | None = None
         self.video_patchifier = VideoLatentPatchifier()
@@ -156,19 +156,19 @@ class BasePipeline:
 
     @property
     def audio_encoder(self) -> object | None:
-        return self._audio_encoder
+        return self.audio_conditioner._encoder
 
     @audio_encoder.setter
     def audio_encoder(self, value: object | None) -> None:
-        self._audio_encoder = value
+        self.audio_conditioner._encoder = value
 
     @property
     def audio_processor(self) -> object | None:
-        return self._audio_processor
+        return self.audio_conditioner._processor
 
     @audio_processor.setter
     def audio_processor(self, value: object | None) -> None:
-        self._audio_processor = value
+        self.audio_conditioner._processor = value
 
     @staticmethod
     def _resolve_model_dir(model_dir: str) -> Path:
@@ -243,21 +243,8 @@ class BasePipeline:
         self.image_conditioner.load()
 
     def _load_audio_encoder(self) -> None:
-        """Load audio VAE encoder + processor if not already loaded."""
-        if self.audio_encoder is not None:
-            return
-        from ltx_core_mlx.model.audio_vae import AudioProcessor, AudioVAEEncoder
-
-        self.audio_encoder = AudioVAEEncoder()
-        encoder_weights = load_split_safetensors(self.model_dir / "audio_vae.safetensors", prefix="audio_vae.encoder.")
-        all_audio = load_split_safetensors(self.model_dir / "audio_vae.safetensors", prefix="audio_vae.")
-        for k, v in all_audio.items():
-            if k.startswith("per_channel_statistics."):
-                encoder_weights[k] = v
-        encoder_weights = remap_audio_vae_keys(encoder_weights)
-        self.audio_encoder.load_weights(list(encoder_weights.items()))
-        self.audio_processor = AudioProcessor()
-        aggressive_cleanup()
+        """Load audio VAE encoder + processor via the AudioConditioner block."""
+        self.audio_conditioner.load()
 
     def _load_decoders(self) -> None:
         """Load VAE decoder + audio decoder + vocoder via composition blocks."""
