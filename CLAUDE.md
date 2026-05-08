@@ -350,7 +350,7 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 
 | Command | Pipeline | Description |
 |---------|----------|-------------|
-| `generate` | T2V / I2V / Two-stage | One-stage (default = distilled @ target, `--dev` = dev+CFG @ target), two-stage (`--two-stage` dev+CFG+upscale, `--hq` res_2s+CFG+upscale, `--distilled` distilled+upscale), or I2V (`--image`) |
+| `generate` | T2V / I2V / Two-stage | One-stage (default = distilled @ target, `--one-stage` = dev+CFG @ target), two-stage (`--two-stage` dev+CFG+upscale, `--hq` res_2s+CFG+upscale, `--distilled` distilled+upscale), or I2V (`--image`) |
 | `a2v` | Audio-to-video | Two-stage audio-conditioned generation (`--hq` for res_2s) |
 | `keyframe` | Keyframe interpolation | Two-stage interpolation between start/end frames |
 | `ic-lora` | IC-LoRA | Two-stage generation with control video conditioning (depth, canny, pose, motion tracks) |

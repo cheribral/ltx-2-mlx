@@ -152,8 +152,9 @@ examples:
         help="Distilled two-stage pipeline (half-res distilled + upscale + distilled refine, no CFG). Mirrors upstream DistilledPipeline.",
     )
     gen.add_argument(
-        "--dev",
+        "--one-stage",
         action="store_true",
+        dest="one_stage",
         help="Dev model + CFG one-stage at full target resolution (no upsampler, no stage 2). Mirrors upstream TI2VidOneStagePipeline. Higher quality than --distilled at small resolutions; slower than --two-stage at large.",
     )
     gen.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 steps (default: 30 standard, 15 HQ)")
@@ -409,14 +410,14 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             "TeaCache (only 8 denoising steps)."
         )
 
-    if sum(map(bool, (args.hq, args.two_stage, args.distilled, args.dev))) > 1:
-        raise SystemExit("Choose at most one of --two-stage, --hq, --distilled, --dev.")
+    if sum(map(bool, (args.hq, args.two_stage, args.distilled, args.one_stage))) > 1:
+        raise SystemExit("Choose at most one of --two-stage, --hq, --distilled, --one-stage.")
 
-    if args.dev:
+    if args.one_stage:
         from ltx_pipelines_mlx.ti2vid_one_stage_dev import DevOneStagePipeline
 
         if not args.quiet:
-            print("Mode: Dev One-Stage (Euler + CFG at full resolution)")
+            print("Mode: One-Stage Dev (Euler + CFG at full resolution)")
             print(f"  Model: {args.model}")
 
         pipe = DevOneStagePipeline(
