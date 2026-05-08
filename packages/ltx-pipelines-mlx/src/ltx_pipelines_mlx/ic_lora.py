@@ -100,6 +100,31 @@ class ICLoraPipeline(TextToVideoPipeline):
                     )
                 self.reference_downscale_factor = scale
 
+        # Auto-detect HDR LoRA from safetensors metadata. When present,
+        # ``hdr_transform`` (e.g. "logc3") triggers HDR-aware decoding
+        # in ``generate_and_save``: the VAE output is post-processed
+        # with the inverse transform to recover linear HDR floats, then
+        # saved as a .npz tensor (the SDR mp4 path remains for preview).
+        from ltx_core_mlx.loader.hdr_metadata import read_hdr_lora_config
+
+        self.hdr_config = None
+        for lora_path, _ in self._lora_paths:
+            cfg = read_hdr_lora_config(lora_path)
+            if cfg is None:
+                continue
+            if self.hdr_config is None:
+                self.hdr_config = cfg
+            elif cfg != self.hdr_config:
+                raise ValueError(
+                    f"Conflicting HDR configurations in LoRAs: have {self.hdr_config!r}, "
+                    f"got {cfg!r} from {lora_path}. Cannot combine HDR LoRAs with different "
+                    f"transforms."
+                )
+            # Override the reference downscale factor when HDR LoRA specifies one
+            # (HDR LoRAs typically train with downscaled reference videos).
+            if cfg.reference_downscale_factor != 1:
+                self.reference_downscale_factor = cfg.reference_downscale_factor
+
     def load(self) -> None:
         """Load generation components: DiT, VAE encoder, upsampler.
 
@@ -618,7 +643,46 @@ class ICLoraPipeline(TextToVideoPipeline):
         # Load decoders on-demand (not loaded during generate to save memory)
         self._load_decoders()
 
-        return self._decode_and_save_video(video_latent, audio_latent, output_path)
+        # HDR LoRA: also save linear-HDR tensor next to the SDR mp4 preview.
+        # Output naming: <output>.hdr.npz holds the float32 (F, H, W, 3) HDR
+        # tensor; the user's tooling converts to EXR / TIFF / etc.
+        result = self._decode_and_save_video(video_latent, audio_latent, output_path)
+        if self.hdr_config is not None:
+            self._save_hdr_tensor(video_latent, output_path)
+        return result
+
+    def _save_hdr_tensor(self, video_latent: mx.array, output_path: str) -> None:
+        """Decode video latents to linear HDR float32 and save next to the mp4.
+
+        The SDR mp4 already produced by ``_decode_and_save_video`` is the
+        tonemapped preview. The HDR tensor is the actual deliverable for
+        film/CGI workflows.
+
+        Output: ``{output_path stem}.hdr.npz`` containing one entry
+        ``video`` of shape ``(F, H, W, 3)`` in linear scene-linear HDR.
+        """
+        from pathlib import Path as _Path
+
+        import numpy as np
+
+        from ltx_core_mlx.hdr import apply_hdr_decode_postprocess
+
+        assert self.vae_decoder is not None
+        # Decode to fp32 video in [-1, 1] (no clamp -- HDR can exceed).
+        decoded = self.vae_decoder.decode(video_latent)  # (1, 3, F, H, W)
+        # Map [-1, 1] -> [0, 1] without clamping (LogC3 expects [0, 1]
+        # but its decompress clips to that range internally).
+        normalized = (decoded.astype(mx.float32) + 1.0) * 0.5
+        hdr = apply_hdr_decode_postprocess(normalized, transform=self.hdr_config.hdr_transform)
+
+        # Reshape (1, 3, F, H, W) -> (F, H, W, 3).
+        hdr_fhwc = hdr[0].transpose(1, 2, 3, 0)
+        _materialize = getattr(mx, "eval")  # noqa: B009 -- avoid eval() lint pattern
+        _materialize(hdr_fhwc)
+
+        out_path = _Path(output_path).with_suffix(".hdr.npz")
+        np.savez_compressed(out_path, video=np.asarray(hdr_fhwc))
+        print(f"  HDR tensor saved: {out_path} (shape={tuple(hdr_fhwc.shape)})")
 
 
 def _resolve_lora_path(path: str) -> str:
