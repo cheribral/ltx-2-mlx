@@ -283,6 +283,43 @@ examples:
     )
     ic.add_argument("--skip-stage-2", action="store_true", help="Skip stage 2 upsampling (half resolution output)")
 
+    # --- hdr-ic-lora ---
+    hdr = sub.add_parser(
+        "hdr-ic-lora",
+        help="Generate HDR video via IC-LoRA with LogC3 inverse (saves SDR mp4 + .hdr.npz)",
+    )
+    _add_generation_args(hdr)
+    hdr.add_argument(
+        "--lora",
+        action="append",
+        nargs=2,
+        metavar=("PATH", "STRENGTH"),
+        required=True,
+        help=(
+            "HDR IC-LoRA weights and strength (repeatable). PATH can be local .safetensors "
+            "or a HuggingFace repo ID (e.g. Lightricks/LTX-2.3-22b-IC-LoRA-HDR). "
+            "Auto-detects HDR transform from safetensors metadata."
+        ),
+    )
+    hdr.add_argument(
+        "--video-conditioning",
+        action="append",
+        nargs=2,
+        metavar=("PATH", "STRENGTH"),
+        default=None,
+        help="Optional reference control video(s) and strength (repeatable). Pure T2V HDR if omitted.",
+    )
+    hdr.add_argument("--image", "-i", default=None, help="Optional reference image for I2V conditioning")
+    hdr.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 denoising steps")
+    hdr.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps")
+    hdr.add_argument(
+        "--conditioning-strength",
+        type=float,
+        default=1.0,
+        help="IC-LoRA conditioning attention strength 0.0-1.0 (default: 1.0)",
+    )
+    hdr.add_argument("--skip-stage-2", action="store_true", help="Skip stage 2 upsampling (half resolution output)")
+
     # --- enhance ---
     enh = sub.add_parser("enhance", help="Enhance a prompt using Gemma (no video generation)")
     enh.add_argument("--prompt", "-p", required=True, help="Prompt to enhance")
@@ -333,6 +370,7 @@ examples:
         "extend": _cmd_extend,
         "keyframe": _cmd_keyframe,
         "ic-lora": _cmd_ic_lora,
+        "hdr-ic-lora": _cmd_hdr_ic_lora,
         "enhance": _cmd_enhance,
         "info": _cmd_info,
         "train": _cmd_train,
@@ -679,6 +717,52 @@ def _cmd_ic_lora(args: argparse.Namespace) -> None:
     )
 
     # Build image conditioning if provided
+    images = None
+    if args.image:
+        images = [(args.image, 0, 1.0)]
+
+    pipe.generate_and_save(
+        prompt=args.prompt,
+        output_path=args.output,
+        video_conditioning=video_conditioning,
+        height=args.height,
+        width=args.width,
+        num_frames=args.frames,
+        seed=args.seed,
+        stage1_steps=args.stage1_steps,
+        stage2_steps=args.stage2_steps,
+        images=images,
+        conditioning_attention_strength=args.conditioning_strength,
+        skip_stage_2=args.skip_stage_2,
+    )
+    _print_result(args.output, t0, args.quiet)
+
+
+def _cmd_hdr_ic_lora(args: argparse.Namespace) -> None:
+    """Generate HDR video via IC-LoRA + LogC3 inverse decompression."""
+    t0 = time.time()
+
+    from ltx_pipelines_mlx.hdr_ic_lora import HDRICLoraPipeline
+
+    lora_paths = [(path, float(strength)) for path, strength in args.lora]
+    video_conditioning = [(path, float(strength)) for path, strength in (args.video_conditioning or [])]
+
+    if not args.quiet:
+        mode_suffix = "T2V" if not video_conditioning else "V2V"
+        print(f"Mode: HDR IC-LoRA (two-stage, LogC3, {mode_suffix})")
+        for path, strength in lora_paths:
+            print(f"  LoRA: {path} (strength={strength})")
+        for path, strength in video_conditioning:
+            print(f"  Control: {path} (strength={strength})")
+
+    pipe = HDRICLoraPipeline(
+        model_dir=args.model,
+        lora_paths=lora_paths,
+        gemma_model_id=args.gemma,
+        low_memory=True,
+        low_ram_streaming=getattr(args, "low_ram", False),
+    )
+
     images = None
     if args.image:
         images = [(args.image, 0, 1.0)]
