@@ -15,7 +15,7 @@ Pure MLX port of [LTX-2](https://github.com/Lightricks/LTX-2) for Apple Silicon.
 - **HQ generation** — res_2s second-order sampler + CFG/STG guidance
 - **Prompt enhancement** — Gemma 3 12B rewrites short prompts into detailed descriptions
 - **Training** — LoRA fine-tuning with flow matching (T2V and V2V strategies)
-- **Block streaming (`--low-ram`)** — stream transformer blocks from disk so q8 fits 16 GB Macs and bf16 fits 32 GB Macs (covers generate / `--two-stage` / `--hq` / a2v / keyframe / ic-lora; bind-time LoRA fusion supports custom distilled-lora-strength)
+- **Block streaming (`--low-ram`)** — stream transformer blocks from disk so q8 fits 16 GB Macs and bf16 fits 32 GB Macs (covers generate / `--two-stage` / `--two-stages-hq` / a2v / keyframe / ic-lora; bind-time LoRA fusion supports custom distilled-lora-strength)
 - **Modality tiling (`--tile-frames N --tile-spatial M`)** — split video tokens into spatial+temporal tiles to cap O(N²) attention activations. Combined with `--low-ram`, unblocks long / HD / 4K generations on Mac Studio (64-128 GB) that would otherwise OOM.
 - **3 model variants** — bf16, int8, int4 (fits 16GB–64GB Macs)
 - **3 upsamplers** — spatial 2x, spatial 1.5x, temporal 2x
@@ -40,7 +40,7 @@ uv sync --all-extras
 ### CLI
 
 ```bash
-# Text-to-Video — pick a pipeline mode (one of --two-stage, --hq, --one-stage, --distilled).
+# Text-to-Video — pick a pipeline mode (one of `--two-stage`, `--two-stages-hq`, `--one-stage`, `--distilled`).
 # Two-stage is the upstream-recommended production default.
 ltx-2-mlx generate --prompt "A sunset over the ocean" --two-stage -o sunset.mp4
 
@@ -48,7 +48,7 @@ ltx-2-mlx generate --prompt "A sunset over the ocean" --two-stage -o sunset.mp4
 ltx-2-mlx generate --prompt "Animate this" --image photo.jpg --two-stage -o animated.mp4
 
 # HQ (res_2s sampler, highest quality)
-ltx-2-mlx generate --prompt "A scene" --hq --stage1-steps 20 -o hq.mp4
+ltx-2-mlx generate --prompt "A scene" --two-stages-hq --stage1-steps 20 -o hq.mp4
 
 # Distilled two-stage (fastest, mirrors upstream DistilledPipeline)
 ltx-2-mlx generate --prompt "A scene" --distilled -H 720 -W 1280 -o distilled.mp4
@@ -82,7 +82,7 @@ ltx-2-mlx generate -p "A cat" --distilled -o cat.mp4 --model dgrauet/ltx-2.3-mlx
 
 # Block streaming works on every generate mode + a2v / keyframe / ic-lora
 ltx-2-mlx generate -p "A cat" -o cat.mp4 --two-stage --low-ram
-ltx-2-mlx generate -p "A cat" -o cat.mp4 --hq --low-ram
+ltx-2-mlx generate -p "A cat" -o cat.mp4 --two-stages-hq --low-ram
 ltx-2-mlx a2v -p "music video" --audio music.wav -o a2v.mp4 --low-ram
 ltx-2-mlx keyframe -p "transition" --start a.png --end b.png -o kf.mp4 --low-ram
 ltx-2-mlx ic-lora -p "scene" --lora lora.safetensors 1.0 --video-conditioning depth.mp4 1.0 --low-ram -o out.mp4
@@ -100,7 +100,7 @@ ltx-2-mlx hdr-ic-lora -p "a sunset over the ocean, vivid HDR" \
 # Stack with --low-ram for max memory savings on big targets.
 ltx-2-mlx generate -p "long scene" --two-stage --low-ram \
     --tile-frames 2 --tile-overlap 4 -o long.mp4
-ltx-2-mlx generate -p "1080p scene" --hq --low-ram \
+ltx-2-mlx generate -p "1080p scene" --two-stages-hq --low-ram \
     --tile-spatial 2 --tile-overlap 4 -H 1080 -W 1920 -o hd.mp4
 
 # Model info
@@ -188,7 +188,7 @@ ltx-2-mlx generate   T2V / I2V / two-stage / HQ generation
   --image, -i         Reference image for I2V
   --steps             Denoising steps for one-stage (default: 8)
   --two-stage         Enable two-stage pipeline (dev model + CFG)
-  --hq                Enable HQ pipeline (res_2s sampler)
+  --two-stages-hq                Enable HQ pipeline (res_2s sampler)
   --cfg-scale         CFG guidance scale (default: 3.0)
   --stg-scale         STG guidance scale (default: 0.0)
   --stage1-steps      Stage 1 steps (default: 30 standard, 15 HQ)
@@ -199,7 +199,7 @@ ltx-2-mlx generate   T2V / I2V / two-stage / HQ generation
 ltx-2-mlx a2v        Audio-to-Video (two-stage, dev model + CFG)
   --audio, -a         Input audio file (required)
   --image, -i         Reference image for I2V (optional)
-  --hq                HQ mode (res_2s sampler for stage 1)
+  --two-stages-hq                HQ mode (res_2s sampler for stage 1)
   --fps               Frame rate (default: 24)
   --audio-start       Audio start time in seconds (default: 0)
   --cfg-scale         CFG guidance scale (default: 3.0)

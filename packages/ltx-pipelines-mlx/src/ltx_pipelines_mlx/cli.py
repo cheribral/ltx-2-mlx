@@ -4,7 +4,7 @@ Usage:
     ltx-2-mlx generate --prompt "a cat walking" --output out.mp4
     ltx-2-mlx generate --prompt "animate this" --image photo.jpg -o anim.mp4
     ltx-2-mlx generate --prompt "a scene" --two-stage -o hires.mp4
-    ltx-2-mlx generate --prompt "a scene" --hq --stage1-steps 20 -o hq.mp4
+    ltx-2-mlx generate --prompt "a scene" --two-stages-hq --stage1-steps 20 -o hq.mp4
     ltx-2-mlx a2v --prompt "music video" --audio music.wav -o a2v.mp4
     ltx-2-mlx retake --prompt "new scene" --video source.mp4 --start 1 --end 3 -o retake.mp4
     ltx-2-mlx extend --prompt "continue" --video source.mp4 --extend-frames 2 -o extended.mp4
@@ -102,7 +102,7 @@ def _add_generation_args(parser: argparse.ArgumentParser) -> None:
             "mx.compile + per-block sync + Metal heap release. Cuts "
             "transformer peak Metal ~75%% (e.g. q8 ~10-12 GB -> ~2.8 GB). "
             "Targets 16 GB Macs (q8) and 32 GB Macs (bf16). Supported "
-            "on generate (one-stage / --two-stage / --hq), a2v, "
+            "on generate (one-stage / --two-stage / --two-stages-hq), a2v, "
             "keyframe, and ic-lora. Two-stage at LoRA strength 1.0 "
             "swaps to the pre-fused transformer-distilled.safetensors "
             "at the stage 1->2 transition; custom strengths trigger "
@@ -145,7 +145,12 @@ examples:
         action="store_true",
         help="Two-stage pipeline: dev model + CFG at half-res, upscale, distilled LoRA refine (requires q8 model)",
     )
-    gen.add_argument("--hq", action="store_true", help="HQ two-stage pipeline (res_2s sampler for stage 1)")
+    gen.add_argument(
+        "--two-stages-hq",
+        action="store_true",
+        dest="two_stages_hq",
+        help="HQ two-stage pipeline (res_2s sampler for stage 1). Mirrors upstream TI2VidTwoStagesHQPipeline.",
+    )
     gen.add_argument(
         "--distilled",
         action="store_true",
@@ -178,7 +183,7 @@ examples:
         "--enable-teacache",
         action="store_true",
         help=(
-            "Two-stage (--two-stage / --hq) only: enable TeaCache stage-1 "
+            "Two-stage (--two-stage / --two-stages-hq) only: enable TeaCache stage-1 "
             "acceleration (opt-in, ~1.46x speedup on Euler at default thresh; "
             "see CLAUDE.md)"
         ),
@@ -402,15 +407,15 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
     lora_paths = [(path, float(strength)) for path, strength in args.lora] if args.lora else []
 
-    if args.enable_teacache and not (args.hq or args.two_stage):
+    if args.enable_teacache and not (args.two_stages_hq or args.two_stage):
         raise SystemExit(
-            "--enable-teacache requires --two-stage (or --hq, but HQ is not yet "
+            "--enable-teacache requires --two-stage (or --two-stages-hq, but HQ is not yet "
             "supported). The one-stage distilled path does not benefit from "
             "TeaCache (only 8 denoising steps)."
         )
 
-    if sum(map(bool, (args.hq, args.two_stage, args.distilled, args.one_stage))) > 1:
-        raise SystemExit("Choose at most one of --two-stage, --hq, --distilled, --one-stage.")
+    if sum(map(bool, (args.two_stages_hq, args.two_stage, args.distilled, args.one_stage))) > 1:
+        raise SystemExit("Choose at most one of --two-stage, --two-stages-hq, --distilled, --one-stage.")
 
     if args.one_stage:
         from ltx_pipelines_mlx.ti2vid_one_stage_dev import DevOneStagePipeline
@@ -480,8 +485,8 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             kwargs["stage2_steps"] = args.stage2_steps
         pipe.generate_and_save(**kwargs)
 
-    elif args.hq or args.two_stage:
-        if args.hq:
+    elif args.two_stages_hq or args.two_stage:
+        if args.two_stages_hq:
             from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline as PipeClass
 
             mode_name = "HQ Two-Stage (res_2s + CFG + distilled LoRA)"
@@ -532,11 +537,11 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
     else:
         raise SystemExit(
-            "generate requires one of --one-stage, --two-stage, --hq, --distilled. "
+            "generate requires one of --one-stage, --two-stage, --two-stages-hq, --distilled. "
             "Each maps to an upstream pipeline class:\n"
             "  --one-stage : TI2VidOneStagePipeline (dev + CFG, full target res)\n"
             "  --two-stage : TI2VidTwoStagesPipeline (dev + CFG, half-res + upscale, recommended)\n"
-            "  --hq        : TI2VidTwoStagesHQPipeline (res_2s + CFG, half-res + upscale)\n"
+            "  --two-stages-hq        : TI2VidTwoStagesHQPipeline (res_2s + CFG, half-res + upscale)\n"
             "  --distilled : DistilledPipeline (distilled half-res + upscale, fastest)"
         )
 

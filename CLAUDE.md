@@ -350,7 +350,7 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 
 | Command | Pipeline | Description |
 |---------|----------|-------------|
-| `generate` | T2V / I2V (mode flag required) | `--one-stage` (dev+CFG @ target), `--two-stage` (dev+CFG+upscale, recommended), `--hq` (res_2s+CFG+upscale), `--distilled` (distilled+upscale, fastest). `--image` for I2V on any mode. |
+| `generate` | T2V / I2V (mode flag required) | `--one-stage` (dev+CFG @ target), `--two-stage` (dev+CFG+upscale, recommended), `--two-stages-hq` (res_2s+CFG+upscale), `--distilled` (distilled+upscale, fastest). `--image` for I2V on any mode. |
 | `a2v` | Audio-to-video | Two-stage audio-conditioned generation (Euler + CFG) |
 | `keyframe` | Keyframe interpolation | Two-stage interpolation between start/end frames |
 | `ic-lora` | IC-LoRA | Two-stage generation with control video conditioning (depth, canny, pose, motion tracks) |
@@ -381,7 +381,7 @@ ltx-2-mlx generate \
   --low-ram -o fox.mp4
 ```
 
-`--low-ram` is supported on `generate` (one-stage / `--two-stage` / `--hq`), `a2v`, `keyframe`, and `ic-lora`. Bind-time LoRA fusion handles ic-lora's control LoRAs and custom `--distilled-lora-strength`. The `generate --lora` flag is still incompatible (use a pre-fused safetensors via mlx-forge). See `## Block Streaming` below for details.
+`--low-ram` is supported on `generate` (one-stage / `--two-stage` / `--two-stages-hq`), `a2v`, `keyframe`, and `ic-lora`. Bind-time LoRA fusion handles ic-lora's control LoRAs and custom `--distilled-lora-strength`. The `generate --lora` flag is still incompatible (use a pre-fused safetensors via mlx-forge). See `## Block Streaming` below for details.
 
 ### IC-LoRA Example
 
@@ -433,7 +433,7 @@ ltx-2-mlx generate \
 # HQ with res_2s second-order sampler (higher quality, ~2x slower)
 ltx-2-mlx generate \
   --prompt "a scene description" \
-  --hq -o output.mp4
+  --two-stages-hq -o output.mp4
 
 # With I2V conditioning
 ltx-2-mlx generate \
@@ -441,7 +441,7 @@ ltx-2-mlx generate \
   --two-stage --image photo.jpg -o output.mp4
 ```
 
-Flags: `--two-stage` (Euler), `--hq` (res_2s), `--cfg-scale` (default 3.0), `--stg-scale` (default 0.0), `--stage1-steps` (default 30 standard, 15 HQ), `--stage2-steps` (default 3), `--image`.
+Flags: `--two-stage` (Euler), `--two-stages-hq` (res_2s), `--cfg-scale` (default 3.0), `--stg-scale` (default 0.0), `--stage1-steps` (default 30 standard, 15 HQ), `--stage2-steps` (default 3), `--image`.
 
 ### Audio-to-Video Example
 
@@ -454,10 +454,10 @@ ltx-2-mlx a2v \
 # A2V HQ (res_2s sampler)
 ltx-2-mlx a2v \
   --prompt "a singer performing" \
-  --audio music.wav --hq -o output.mp4
+  --audio music.wav --two-stages-hq -o output.mp4
 ```
 
-Flags: `--audio` (required), `--image` (optional I2V), `--hq` (res_2s), `--cfg-scale`, `--stg-scale`, `--stage1-steps` (default 30 standard, 15 HQ), `--fps`.
+Flags: `--audio` (required), `--image` (optional I2V), `--two-stages-hq` (res_2s), `--cfg-scale`, `--stg-scale`, `--stage1-steps` (default 30 standard, 15 HQ), `--fps`.
 
 ### Retake / Extend Example
 
@@ -548,7 +548,7 @@ Two-stage pipeline for higher-resolution generation. Requires the dev model + di
 
 - **Stage 1**: Dev model + CFG guidance at half resolution
   - `--two-stage`: Euler sampler (`guided_denoise_loop`)
-  - `--hq`: res_2s second-order sampler (`res2s_denoise_loop` with guidance)
+  - `--two-stages-hq`: res_2s second-order sampler (`res2s_denoise_loop` with guidance)
   - Dynamic sigma schedule via `ltx2_schedule` (default 30 steps standard, 15 HQ)
   - Optional I2V conditioning (re-encoded at half-res)
 - **Stage 2**: Dev + distilled LoRA fused, simple Euler (no CFG)
@@ -584,11 +584,11 @@ pipeline.generate_and_save(
 )
 ```
 
-Equivalent CLI flag (works on both `--two-stage` and `--hq`):
+Equivalent CLI flag (works on both `--two-stage` and `--two-stages-hq`):
 
 ```bash
 ltx-2-mlx generate --prompt "..." --two-stage --enable-teacache -o out.mp4
-ltx-2-mlx generate --prompt "..." --hq --enable-teacache --teacache-thresh 1.0 -o out.mp4
+ltx-2-mlx generate --prompt "..." --two-stages-hq --enable-teacache --teacache-thresh 1.0 -o out.mp4
 ```
 
 The HQ path uses the res_2s sampler, which does two model evaluations per outer step (stage 1 at `sigma`, stage 2 at the substep after SDE noise injection). The TeaCache decision is made **once per outer step** on stage 1's gate signal; on skip both stages reuse cached residuals via `block_stack_override`. Cache payload shape: `{"stage1": {cond: (v,a), uncond: (v,a), ...}, "stage2": {...}}`.
@@ -601,7 +601,7 @@ Decision per step is made on **block 0's modulated input** of the conditioned pa
 - Baseline: 1374s
 - TeaCache (thresh=0.5): 942s — **1.46x speedup, 31% time saved**, visually validated.
 
-**HQ (`--hq`) speedup** (seed 81647281, 384×576×65, MLX bf16 q8,
+**HQ (`--two-stages-hq`) speedup** (seed 81647281, 384×576×65, MLX bf16 q8,
 HQ-specific calibrated coefficients in `ti2vid_two_stages_hq.py`):
 - Baseline: 1370s
 - TeaCache (thresh=1.0): 768s — **1.78x speedup, 44% time saved**
@@ -616,7 +616,7 @@ HQ outperforms Euler in raw speedup because:
 
 Calibration is **scheduler-specific** — Euler coefficients (calibrated
 on `guided_denoise_loop`) produce ~0% skip on `res2s_denoise_loop` and
-vice versa. Use `scripts/calibrate_teacache.py --hq` to recalibrate
+vice versa. Use `scripts/calibrate_teacache.py --two-stages-hq` to recalibrate
 res_2s, and edit `LTX2_HQ_TEACACHE_COEFFICIENTS` /
 `LTX2_HQ_TEACACHE_THRESH` in `ti2vid_two_stages_hq.py`.
 
@@ -709,7 +709,7 @@ LTX-2.3 bf16 distilled, 480x704x33: confirmed runs end-to-end on M2 Pro 32 GB. W
 `--low-ram` is supported and end-to-end-validated on:
 - `generate` (one-stage T2V/I2V)
 - `generate --two-stage` (Euler + CFG)
-- `generate --hq` (res_2s + CFG)
+- `generate --two-stages-hq` (res_2s + CFG)
 - `a2v` (audio-to-video)
 - `keyframe` (interpolation)
 - `ic-lora` (control video conditioning, via bind-time LoRA fusion)
@@ -783,7 +783,7 @@ Upstream uses ``(B, num_axes, T, 2)`` interval positions per token; we use ``(B,
 
 Total tiles = ``N * M * M``. Default ``1*1*1`` = no tiling.
 
-Coverage: ``generate`` (one-stage / ``--two-stage`` / ``--hq``), ``a2v``, ``keyframe`` via ``TwoStagePipeline.tile_count`` (inherited). ``ic-lora`` could be wired on the same model with the same primitive but isn't yet.
+Coverage: ``generate`` (one-stage / ``--two-stage`` / ``--two-stages-hq``), ``a2v``, ``keyframe`` via ``TwoStagePipeline.tile_count`` (inherited). ``ic-lora`` could be wired on the same model with the same primitive but isn't yet.
 
 ### Tradeoff
 
