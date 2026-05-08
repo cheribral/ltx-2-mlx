@@ -43,15 +43,15 @@ from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
 from ltx_core_mlx.utils.video import load_video_frames_normalized
 from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors
+from ltx_pipelines_mlx._base import BasePipeline
 from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS, STAGE_2_SIGMAS
-from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
 from ltx_pipelines_mlx.utils.helpers import create_noised_state
 from ltx_pipelines_mlx.utils.samplers import denoise_loop
 
 logger = logging.getLogger(__name__)
 
 
-class ICLoraPipeline(TextToVideoPipeline):
+class ICLoraPipeline(BasePipeline):
     """Two-stage video generation pipeline with IC-LoRA reference conditioning.
 
     Conditions the generated video on a reference video (e.g., depth, pose, edges)

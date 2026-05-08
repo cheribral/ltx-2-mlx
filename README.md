@@ -133,7 +133,7 @@ For other modes:
 
 - `DistilledPipeline` — fastest (distilled half-res + upscale).
 - `TwoStageHQPipeline` — highest quality (res_2s + CFG + upscale).
-- `DevOneStagePipeline` — full-res CFG, no upscaler dependency.
+- `TI2VidOneStagePipeline` — full-res CFG, no upscaler dependency.
 
 Audio-to-Video:
 

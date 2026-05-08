@@ -1,20 +1,45 @@
-"""ltx-pipelines — Generation pipelines for LTX-2.3 on MLX."""
+"""ltx-pipelines — Generation pipelines for LTX-2.3 on MLX.
 
+Public pipeline classes mirror upstream Lightricks/LTX-2 pipelines 1:1:
+
+| Public class | Upstream equivalent |
+|---|---|
+| ``TI2VidOneStagePipeline`` | ``ti2vid_one_stage.TI2VidOneStagePipeline`` |
+| ``TwoStagePipeline`` | ``ti2vid_two_stages.TI2VidTwoStagesPipeline`` |
+| ``TwoStageHQPipeline`` | ``ti2vid_two_stages_hq.TI2VidTwoStagesHQPipeline`` |
+| ``DistilledPipeline`` | ``distilled.DistilledPipeline`` |
+| ``ICLoraPipeline`` | ``ic_lora.ICLoraPipeline`` |
+| ``HDRICLoraPipeline`` | ``hdr_ic_lora.HDRICLoraPipeline`` |
+| ``KeyframeInterpolationPipeline`` | ``keyframe_interpolation.KeyframeInterpolationPipeline`` |
+| ``AudioToVideoPipeline`` | ``a2vid_two_stage.A2VidPipelineTwoStage`` |
+| ``RetakePipeline`` | ``retake.RetakePipeline`` (extend folded in) |
+
+The :class:`BasePipeline` and :class:`ImageToVideoPipeline` classes live
+in the private ``_base`` module — they are shared infrastructure parents
+with no upstream counterpart.
+"""
+
+from ltx_pipelines_mlx._base import BasePipeline, ImageToVideoPipeline
 from ltx_pipelines_mlx.a2vid_two_stage import AudioToVideoPipeline
+from ltx_pipelines_mlx.distilled import DistilledPipeline
+from ltx_pipelines_mlx.hdr_ic_lora import HDRICLoraPipeline
 from ltx_pipelines_mlx.ic_lora import ICLoraPipeline
 from ltx_pipelines_mlx.keyframe_interpolation import KeyframeInterpolationPipeline
 from ltx_pipelines_mlx.retake import RetakePipeline
-from ltx_pipelines_mlx.ti2vid_one_stage import ImageToVideoPipeline, TextToVideoPipeline
+from ltx_pipelines_mlx.ti2vid_one_stage import TI2VidOneStagePipeline
 from ltx_pipelines_mlx.ti2vid_two_stages import TwoStagePipeline
 from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline
 
 __all__ = [
     "AudioToVideoPipeline",
+    "BasePipeline",
+    "DistilledPipeline",
+    "HDRICLoraPipeline",
     "ICLoraPipeline",
     "ImageToVideoPipeline",
     "KeyframeInterpolationPipeline",
     "RetakePipeline",
-    "TextToVideoPipeline",
+    "TI2VidOneStagePipeline",
     "TwoStageHQPipeline",
     "TwoStagePipeline",
 ]

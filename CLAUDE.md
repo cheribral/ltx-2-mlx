@@ -99,7 +99,8 @@ packages/
 │
 ├── ltx-pipelines-mlx/                    # ltx_pipelines_mlx
 │   └── src/ltx_pipelines_mlx/
-│       ├── ti2vid_one_stage.py            # T2V/I2V: one-stage generation
+│       ├── _base.py                       # BasePipeline + ImageToVideoPipeline (private base classes)
+│       ├── ti2vid_one_stage.py            # TI2VidOneStagePipeline (dev one-stage + CFG, full target res)
 │       ├── ti2vid_two_stages.py           # Two-stage: half res → upscale → refine
 │       ├── ti2vid_two_stages_hq.py        # Two-stage HQ variant
 │       ├── a2vid_two_stage.py             # Audio-to-video two-stage pipeline
@@ -566,7 +567,7 @@ Two-stage pipeline for higher-resolution generation. Requires the dev model + di
 - **Memory budget (32GB Mac)**: 33 frames at 480x704 with CFG-only (2 forward passes per step). STG adds a 3rd pass and may not fit.
 
 ### Key Files
-- `ti2vid_two_stages.py` — `TwoStagePipeline` (Euler + CFG, extends `TextToVideoPipeline`)
+- `ti2vid_two_stages.py` — `TwoStagePipeline` (Euler + CFG, extends `BasePipeline`)
 - `ti2vid_two_stages_hq.py` — `TwoStageHQPipeline` (res_2s + CFG, extends `TwoStagePipeline`)
 - `utils/samplers.py` — `res2s_denoise_loop` (with guidance support), `guided_denoise_loop`
 - `scheduler.py` — `ltx2_schedule`, `STAGE_2_SIGMAS`
@@ -670,7 +671,7 @@ Uses the distilled model (no CFG) with LoRA fused for Stage 1 only.
 - **LoRA key remapping**: Uses `LTXV_LORA_COMFY_RENAMING_MAP` (ComfyUI/diffusers → MLX keys). All 480 LoRA targets match model keys.
 
 ### Key Files
-- `ic_lora.py` — `ICLoraPipeline` (extends `TextToVideoPipeline`)
+- `ic_lora.py` — `ICLoraPipeline` (extends `BasePipeline`)
 - `conditioning/types/reference_video_cond.py` — `VideoConditionByReferenceLatent`
 - `conditioning/types/attention_strength_wrapper.py` — `ConditioningItemAttentionStrengthWrapper`
 - `loader/fuse_loras.py` — LoRA weight fusion with quantization support
@@ -734,7 +735,7 @@ For `ic-lora`, each control LoRA is attached as a ``BlockLoraSource`` to the str
 
 - `loader/block_streaming.py` — `BlockStreamer` (mmap'd safetensors + per-block key map + bind with eviction + auto-reload) and `StreamingLTXModel` (drop-in wrapper).
 - `model/transformer/model.py` — `block_provider` parameter on `LTXModel.__call__` + per-block sync.
-- `ti2vid_one_stage.py` — pipeline integration: `low_ram_streaming` constructor flag wired to `--low-ram` CLI.
+- `_base.py` — `BasePipeline.low_ram_streaming` constructor flag wired to `--low-ram` CLI.
 - `tests/test_block_streaming.py` — 7 unit tests covering bind, block_provider hook, wrapper, eviction + auto-reload, bind-time LoRA fusion.
 
 ---

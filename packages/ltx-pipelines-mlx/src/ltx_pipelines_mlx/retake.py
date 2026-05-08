@@ -44,8 +44,8 @@ from ltx_core_mlx.utils.ffmpeg import probe_video_info
 from ltx_core_mlx.utils.image import load_video_frames
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
+from ltx_pipelines_mlx._base import BasePipeline
 from ltx_pipelines_mlx.scheduler import ltx2_schedule
-from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
 from ltx_pipelines_mlx.utils.samplers import guided_denoise_loop
 
 # Reference defaults (LTX_2_3_PARAMS)
@@ -63,7 +63,7 @@ class _SourceMeta:
     num_frames: int
 
 
-class RetakePipeline(TextToVideoPipeline):
+class RetakePipeline(BasePipeline):
     """Retake pipeline: regenerate a time segment while preserving the rest.
 
     Uses the dev (non-distilled) model with CFG guidance for quality output.

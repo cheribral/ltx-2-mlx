@@ -418,13 +418,13 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         raise SystemExit("Choose at most one of --two-stage, --two-stages-hq, --distilled, --one-stage.")
 
     if args.one_stage:
-        from ltx_pipelines_mlx.ti2vid_one_stage_dev import DevOneStagePipeline
+        from ltx_pipelines_mlx.ti2vid_one_stage import TI2VidOneStagePipeline
 
         if not args.quiet:
             print("Mode: One-Stage Dev (Euler + CFG at full resolution)")
             print(f"  Model: {args.model}")
 
-        pipe = DevOneStagePipeline(
+        pipe = TI2VidOneStagePipeline(
             model_dir=args.model,
             gemma_model_id=args.gemma,
             low_memory=True,

@@ -31,8 +31,8 @@ from ltx_core_mlx.utils.image import prepare_image_for_encoding
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
 from ltx_core_mlx.utils.weights import load_split_safetensors
+from ltx_pipelines_mlx._base import BasePipeline
 from ltx_pipelines_mlx.scheduler import STAGE_2_SIGMAS, ltx2_schedule
-from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
 from ltx_pipelines_mlx.utils.helpers import create_noised_state
 from ltx_pipelines_mlx.utils.samplers import denoise_loop, guided_denoise_loop
 
@@ -98,7 +98,7 @@ def _remap_lora_keys(lora_sd: dict[str, mx.array]) -> dict[str, mx.array]:
     return remapped
 
 
-class TwoStagePipeline(TextToVideoPipeline):
+class TwoStagePipeline(BasePipeline):
     """Two-stage generation: dev model + CFG at half-res, upscale, distilled LoRA refine.
 
     Stage 1: Dev model + CFG guidance at half resolution (Euler sampler).

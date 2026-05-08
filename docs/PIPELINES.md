@@ -2,7 +2,7 @@
 
 Reference for all CLI subcommands of `ltx-2-mlx`, the pipeline class
 backing each, and which memory / performance flags apply where.
-Current as of **v0.8.3**.
+Current as of **v0.9.0**.
 
 For the underlying architecture and conventions, see
 [CLAUDE.md](../CLAUDE.md). For the high-level user-facing overview,
@@ -12,7 +12,7 @@ see [README.md](../README.md).
 
 | CLI | Pipeline class | Mode(s) | Sampler stage 1 | Sampler stage 2 | Default model | CFG | STG default |
 |---|---|---|---|---|---|---|---|
-| `generate --one-stage` | `DevOneStagePipeline` | T2V / I2V | Euler + CFG (30 steps) at **full** resolution | — | q8 + dev LoRA | ✅ | 0.0 |
+| `generate --one-stage` | `TI2VidOneStagePipeline` | T2V / I2V | Euler + CFG (30 steps) at **full** resolution | — | q8 + dev LoRA | ✅ | 0.0 |
 | `generate --two-stage` | `TwoStagePipeline` | T2V / I2V | Euler + CFG (30 steps) | Euler distilled (3 steps) | q8 + dev LoRA | ✅ | 0.0 |
 | `generate --two-stages-hq` | `TwoStageHQPipeline` | T2V / I2V | res_2s + CFG (15 steps × 2 sub-steps) | Euler distilled (3) | q8 + dev LoRA | ✅ | 0.0 |
 | `generate --distilled` | `DistilledPipeline` | T2V / I2V | Euler distilled (8 steps) at half-res | Euler distilled (3) at full-res | q8 (distilled only) | ❌ | — |

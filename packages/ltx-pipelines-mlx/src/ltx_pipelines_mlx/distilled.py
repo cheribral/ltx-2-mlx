@@ -13,7 +13,7 @@ running distilled directly at full res can produce out-of-distribution
 artefacts.
 
 For the simpler distilled-at-target one-stage path, see
-:class:`TextToVideoPipeline`.
+:class:`BasePipeline`.
 
 For dev model + CFG quality, see :class:`TwoStagePipeline` /
 :class:`TwoStageHQPipeline`.
