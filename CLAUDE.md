@@ -357,6 +357,7 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 | `hdr-ic-lora` | HDR IC-LoRA | Two-stage HDR generation via IC-LoRA + LogC3 inverse (saves SDR mp4 + linear-HDR `.npz`) |
 | `retake` | Retake | Regenerate a time segment of an existing video (dev model + CFG) |
 | `extend` | Extend | Add frames before or after an existing video (dev model + CFG) |
+| `upscale` | Upscale | Standalone neural spatial upscale of an existing video (VAE encode → upsampler → VAE decode, no DiT). Defaults to 2x; use `--upsampler spatial_upscaler_x1_5_v1_0` for 1.5x. Audio remuxed if present. |
 | `enhance` | Prompt enhancement | Enhance a text prompt using Gemma (no video generation) |
 | `info` | Model info | Show model configuration and memory estimates |
 | `train` | Training | Train a LoRA or full model from YAML config (requires ltx-trainer-mlx) |

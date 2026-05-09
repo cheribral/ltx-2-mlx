@@ -335,6 +335,35 @@ examples:
     )
     hdr.add_argument("--skip-stage-2", action="store_true", help="Skip stage 2 upsampling (half resolution output)")
 
+    # --- upscale ---
+    ups = sub.add_parser(
+        "upscale",
+        help="Spatial upscale a video via the LTX neural latent upsampler (no DiT)",
+    )
+    ups.add_argument("--input", "-i", required=True, help="Input video file")
+    ups.add_argument("--output", "-o", required=True, help="Output video path (.mp4)")
+    ups.add_argument(
+        "--model",
+        "-m",
+        default=DEFAULT_MODEL,
+        help=f"Model weights (HF repo or path, default: {DEFAULT_MODEL})",
+    )
+    ups.add_argument(
+        "--upsampler",
+        default="spatial_upscaler_x2_v1_1",
+        help=(
+            "Upsampler safetensors stem (default: spatial_upscaler_x2_v1_1 = 2x). "
+            "Other built-in: spatial_upscaler_x1_5_v1_0 (1.5x)."
+        ),
+    )
+    ups.add_argument(
+        "--max-frames",
+        type=int,
+        default=None,
+        help="Max input frames to upscale (default: full video, rounded to nearest valid latent count)",
+    )
+    ups.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output")
+
     # --- enhance ---
     enh = sub.add_parser("enhance", help="Enhance a prompt using Gemma (no video generation)")
     enh.add_argument("--prompt", "-p", required=True, help="Prompt to enhance")
@@ -386,6 +415,7 @@ examples:
         "keyframe": _cmd_keyframe,
         "ic-lora": _cmd_ic_lora,
         "hdr-ic-lora": _cmd_hdr_ic_lora,
+        "upscale": _cmd_upscale,
         "enhance": _cmd_enhance,
         "info": _cmd_info,
         "train": _cmd_train,
@@ -941,6 +971,18 @@ def _cmd_preprocess(args: argparse.Namespace) -> None:
         max_frames=args.max_frames,
         captions_dir=args.captions,
         caption_ext=args.caption_ext,
+    )
+
+
+def _cmd_upscale(args: argparse.Namespace) -> None:
+    """Standalone video spatial upscale via the LTX neural latent upsampler."""
+    from ltx_pipelines_mlx.upscale import UpscalePipeline
+
+    pipe = UpscalePipeline(model_dir=args.model, upsampler_name=args.upsampler)
+    pipe.upscale(
+        input_path=args.input,
+        output_path=args.output,
+        max_frames=args.max_frames,
     )
 
 
