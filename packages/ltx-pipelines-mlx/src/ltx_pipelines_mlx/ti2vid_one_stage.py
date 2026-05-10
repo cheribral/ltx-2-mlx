@@ -247,7 +247,9 @@ class TI2VidOneStagePipeline(TI2VidTwoStagesPipeline):
         if self.low_memory:
             aggressive_cleanup()
 
-        video_latent = self.video_patchifier.unpatchify(output.video_latent, (F, H, W))
+        # Strip appended keyframe tokens (multi-anchor with frame_idx>0).
+        gen_tokens = output.video_latent[:, : F * H * W, :]
+        video_latent = self.video_patchifier.unpatchify(gen_tokens, (F, H, W))
         audio_latent = self.audio_patchifier.unpatchify(output.audio_latent)
         _materialize(video_latent, audio_latent)
         return video_latent, audio_latent

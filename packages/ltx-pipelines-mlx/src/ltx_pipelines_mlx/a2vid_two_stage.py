@@ -265,7 +265,9 @@ class A2VidPipelineTwoStage(TI2VidTwoStagesPipeline):
             self._load_upsampler()
         assert self.upsampler is not None
 
-        video_half = self.video_patchifier.unpatchify(output_1.video_latent, (F, H_half, W_half))
+        # Strip appended keyframe tokens (multi-anchor with frame_idx>0).
+        gen_tokens_1 = output_1.video_latent[:, : F * H_half * W_half, :]
+        video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
         H_full = H_half * 2
         W_full = W_half * 2
 
@@ -337,7 +339,8 @@ class A2VidPipelineTwoStage(TI2VidTwoStagesPipeline):
         if self.low_memory:
             aggressive_cleanup()
 
-        video_latent = self.video_patchifier.unpatchify(output_2.video_latent, (F, H_full, W_full))
+        gen_tokens_2 = output_2.video_latent[:, : F * H_full * W_full, :]
+        video_latent = self.video_patchifier.unpatchify(gen_tokens_2, (F, H_full, W_full))
 
         # --- Decode and save ---
         if self.low_memory:

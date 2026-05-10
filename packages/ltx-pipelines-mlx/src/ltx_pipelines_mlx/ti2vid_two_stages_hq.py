@@ -226,7 +226,11 @@ class TI2VidTwoStagesHQPipeline(TI2VidTwoStagesPipeline):
         self._fuse_distilled_lora(self.dit)
 
         # --- Upscale with denormalize/renormalize ---
-        video_half = self.video_patchifier.unpatchify(output_1.video_latent, (F, H_half, W_half))
+        # Strip any appended keyframe tokens (multi-anchor with frame_idx>0
+        # appends via VideoConditionByKeyframeIndex; only the base
+        # F*H*W tokens are spatial latent we need to unpatchify).
+        gen_tokens_1 = output_1.video_latent[:, : F * H_half * W_half, :]
+        video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
 
         video_mlx = video_half.transpose(0, 2, 3, 4, 1)
         video_denorm = self.vae_encoder.denormalize_latent(video_mlx)
@@ -304,7 +308,9 @@ class TI2VidTwoStagesHQPipeline(TI2VidTwoStagesPipeline):
         if self.low_memory:
             aggressive_cleanup()
 
-        video_latent = self.video_patchifier.unpatchify(output_2.video_latent, (F, H_full, W_full))
+        # Strip appended keyframe tokens before unpatchify (see stage 1).
+        gen_tokens_2 = output_2.video_latent[:, : F * H_full * W_full, :]
+        video_latent = self.video_patchifier.unpatchify(gen_tokens_2, (F, H_full, W_full))
         audio_latent = self.audio_patchifier.unpatchify(output_2.audio_latent)
 
         return video_latent, audio_latent
